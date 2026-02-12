@@ -4,7 +4,8 @@ import (
 	"bytes"
 	"log"
 	"omolsm"
-	"omolsm/sst_io"
+	"omolsm/sst_io/reader"
+	writer "omolsm/sst_io/writer"
 	"os"
 	"path"
 )
@@ -16,14 +17,14 @@ type Node struct {
 	seq           int32             // sstable 的 seq 序列号. 对应为文件名中的 level_seq.sst 中的 seq
 	size          uint64            // sstable 的大小，单位 byte
 	blockToFilter map[uint64][]byte // 各 block 对应的 filter bitmap
-	index         []*sst_io.Index   // 各 block 对应的索引
+	index         []*writer.Index   // 各 block 对应的索引
 	startKey      []byte            // sstable 中最小的 key
 	endKey        []byte            // sstable 中最大的 key
-	sstReader     *sst_io.SSTReader // 读取 sst 文件的 reader 入口
+	sstReader     *reader.SSTReader // 读取 sst 文件的 reader 入口
 }
 
-func NewNode(conf *omolsm.Config, file string, sstReader *sst_io.SSTReader, level int, seq int32,
-	size uint64, blockToFilter map[uint64][]byte, index []*sst_io.Index) *Node {
+func NewNode(conf *omolsm.Config, file string, sstReader *reader.SSTReader, level int, seq int32,
+	size uint64, blockToFilter map[uint64][]byte, index []*writer.Index) *Node {
 
 	return &Node{
 		conf:          conf,
@@ -39,7 +40,7 @@ func NewNode(conf *omolsm.Config, file string, sstReader *sst_io.SSTReader, leve
 	}
 }
 
-func (n *Node) GetAll() ([]*sst_io.KV, error) {
+func (n *Node) GetAll() ([]*reader.KV, error) {
 	return n.sstReader.ReadData()
 }
 
@@ -83,14 +84,14 @@ func (n *Node) Get(key []byte) ([]byte, bool, error) {
 }
 
 // node 包中添加
-func (n *Node) GetRange(startKey, endKey []byte) ([]*sst_io.KV, error) {
+func (n *Node) GetRange(startKey, endKey []byte) ([]*reader.KV, error) {
 	// 读取所有 block，筛选 startKey <= key < endKey 的 KV
 	allKVs, err := n.GetAll()
 	if err != nil {
 		return nil, err
 	}
 
-	var result []*sst_io.KV
+	var result []*reader.KV
 	for _, kv := range allKVs {
 		if string(kv.Key) >= string(startKey) && string(kv.Key) < string(endKey) {
 			result = append(result, kv)
@@ -129,7 +130,7 @@ func (n *Node) Close() {
 }
 
 // 二分查找，key 可能从属的 block index
-func (n *Node) binarySearchIndex(key []byte, start, end int) (*sst_io.Index, bool) {
+func (n *Node) binarySearchIndex(key []byte, start, end int) (*writer.Index, bool) {
 	if start == end {
 		return n.index[start], bytes.Compare(n.index[start].Key, key) >= 0
 	}

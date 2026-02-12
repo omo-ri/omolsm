@@ -16,22 +16,22 @@ type Index struct {
 }
 
 type SSTWriter struct {
-	conf          *omolsm.Config    // 配置文件
-	dest          *os.File          // sstable 对应的磁盘文件
-	dataBuf       *bytes.Buffer     // 数据块缓冲区 key -> val
-	filterBuf     *bytes.Buffer     // 过滤器块缓冲区 prev block offset -> filter bit map
-	indexBuf      *bytes.Buffer     // 索引块缓冲区 index key -> prev block offset, prev block size
+	conf          *omolsm.Config
+	dest          *os.File
+	dataBuf       *bytes.Buffer
+	filterBuf     *bytes.Buffer
+	indexBuf      *bytes.Buffer
 	blockToFilter map[uint64][]byte // prev block offset -> filter bit map
 	index         []*Index          // index key -> prev block offset, prev block size
 
-	dataBlock     *block.Block // 数据块
-	filterBlock   *block.Block // 过滤器块
-	indexBlock    *block.Block // 索引块
-	assistScratch [20]byte     // 用于在写索引块时临时使用的辅助缓冲区
+	dataBlock     *block.Block
+	filterBlock   *block.Block
+	indexBlock    *block.Block
+	assistScratch [20]byte
 
-	prevKey         []byte // 前一笔数据的 key
-	prevBlockOffset uint64 // 前一个数据块的起始偏移位置
-	prevBlockSize   uint64 // 前一个数据块的大小
+	prevKey         []byte
+	prevBlockOffset uint64
+	prevBlockSize   uint64
 }
 
 func NewSSTWriter(file string, conf *omolsm.Config) (*SSTWriter, error) {
@@ -54,9 +54,7 @@ func NewSSTWriter(file string, conf *omolsm.Config) (*SSTWriter, error) {
 	}, nil
 }
 
-// Finish 完成 sstable 的全部处理流程，包括将其中的数据溢写到磁盘，并返回信息供上层的 lsm 获取缓存
 func (s *SSTWriter) Finish() (size uint64, blockToFilter map[uint64][]byte, index []*Index) {
-	// 完成最后一个块的处理
 	s.refreshBlock()
 	// 补齐最后一个 index
 	s.insertIndex()
@@ -91,7 +89,6 @@ func (s *SSTWriter) Finish() (size uint64, blockToFilter map[uint64][]byte, inde
 
 // Append 追加一笔数据到 sstable 中
 func (s *SSTWriter) Append(key, value []byte) {
-	// 倘若开启一个新的数据块，需要添加索引
 	if s.dataBlock.GetKvsCnt() == 0 {
 		s.insertIndex()
 	}
@@ -100,8 +97,8 @@ func (s *SSTWriter) Append(key, value []byte) {
 	s.dataBlock.Append(key, value)
 	// 将 key 添加到块的布隆过滤器中
 	s.conf.Filter.Add(key)
-	// 记录一下最新的 key
-	s.prevKey = key
+	// 记录一下最新的 key（深拷贝，防止调用方复用 buffer 导致污染）
+	s.prevKey = append(s.prevKey[:0], key...)
 
 	// 倘若数据块大小超限，则需要将其添加到 dataBuffer，并重置块
 	if s.dataBlock.Size() >= s.conf.SSTDataBlockSize {
@@ -121,8 +118,11 @@ func (s *SSTWriter) Close() {
 }
 
 func (s *SSTWriter) insertIndex() {
-	// 获取索引的 key
-	indexKey := s.prevKey
+	if len(s.prevKey) == 0 && s.prevBlockSize == 0 {
+		return
+	}
+	// 深拷贝 prevKey，确保每条 index 持有独立内存
+	indexKey := append([]byte{}, s.prevKey...)
 	n := binary.PutUvarint(s.assistScratch[0:], s.prevBlockOffset)
 	n += binary.PutUvarint(s.assistScratch[n:], s.prevBlockSize)
 

@@ -5,7 +5,8 @@ import (
 	"log"
 	"omolsm/memtable"
 	"omolsm/node"
-	"omolsm/sst_io"
+	"omolsm/sst_io/reader"
+	writer "omolsm/sst_io/writer"
 	"sort"
 )
 
@@ -14,7 +15,7 @@ func (t *Tree) flushMemTable(memTable memtable.MemTable) {
 	kvs := memTable.All()
 	seq := t.levelToSeq[0].Add(1)
 
-	sstWriter, err := sst_io.NewSSTWriter(t.sstFile(0, seq), t.conf)
+	sstWriter, err := writer.NewSSTWriter(t.sstFile(0, seq), t.conf)
 	if err != nil {
 		log.Printf("Error creating SST writer for level 0 seq %d: %v\n", seq, err)
 		return
@@ -82,7 +83,7 @@ func (t *Tree) compactLevel(level int) {
 	// 3. 写入下一层
 	nextLevel := level + 1
 	seq := t.levelToSeq[nextLevel].Add(1)
-	sstWriter, err := sst_io.NewSSTWriter(t.sstFile(nextLevel, seq), t.conf)
+	sstWriter, err := writer.NewSSTWriter(t.sstFile(nextLevel, seq), t.conf)
 	if err != nil {
 		log.Printf("Error creating SST writer for level %d seq %d: %v\n", nextLevel, seq, err)
 		return
@@ -119,9 +120,9 @@ func (t *Tree) removeNodes(level int, toRemove []*node.Node) {
 	t.nodes[level] = kept
 }
 
-func (t *Tree) insertNode(level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*sst_io.Index) {
+func (t *Tree) insertNode(level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*writer.Index) {
 	file := t.sstFile(level, seq)
-	sstReader, err := sst_io.NewSSTReader(file, t.conf)
+	sstReader, err := reader.NewSSTReader(file, t.conf)
 	if err != nil {
 		log.Printf("Error creating SST reader for %s: %v\n", file, err)
 		return

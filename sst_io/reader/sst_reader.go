@@ -1,4 +1,4 @@
-package sst_io
+package reader
 
 import (
 	"bufio"
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"omolsm"
+	sstio "omolsm/sst_io/writer"
 	"os"
 	"path"
 )
@@ -106,7 +107,7 @@ func (s *SSTReader) ReadFilter() (map[uint64][]byte, error) {
 }
 
 // 读取索引块
-func (s *SSTReader) ReadIndex() ([]*Index, error) {
+func (s *SSTReader) ReadIndex() ([]*sstio.Index, error) {
 	// 如果 footer 信息还没读取，则先完成 footer 信息加载
 	if s.indexOffset == 0 || s.indexSize == 0 {
 		if err := s.ReadFooter(); err != nil {
@@ -182,9 +183,9 @@ func (s *SSTReader) readFilter(block []byte) (map[uint64][]byte, error) {
 }
 
 // 解析 index block 块的内容
-func (s *SSTReader) readIndex(block []byte) ([]*Index, error) {
+func (s *SSTReader) readIndex(block []byte) ([]*sstio.Index, error) {
 	var (
-		index   []*Index
+		index   []*sstio.Index
 		prevKey []byte
 	)
 
@@ -202,7 +203,7 @@ func (s *SSTReader) readIndex(block []byte) ([]*Index, error) {
 
 		blockOffset, n := binary.Uvarint(value)
 		blockSize, _ := binary.Uvarint(value[n:])
-		index = append(index, &Index{
+		index = append(index, &sstio.Index{
 			Key:             key,
 			PrevBlockOffset: blockOffset,
 			PrevBlockSize:   blockSize,

@@ -3,7 +3,8 @@ package node
 import (
 	"bytes"
 	"omolsm"
-	"omolsm/sst_io"
+	"omolsm/sst_io/reader"
+	writer "omolsm/sst_io/writer"
 	"testing"
 )
 
@@ -13,14 +14,14 @@ func Test_Node_Get(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	sstWriter, err := sst_io.NewSSTWriter("test_node_get.sst", conf)
+	sstWriter, err := writer.NewSSTWriter("test_node_get.sst", conf)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer sstWriter.Close()
 
-	kvs := []*sst_io.KV{
+	kvs := []*reader.KV{
 		{
 			Key:   []byte("a"),
 			Value: []byte("b"),
@@ -43,7 +44,7 @@ func Test_Node_Get(t *testing.T) {
 	}
 
 	size, blockToFilter, index := sstWriter.Finish()
-	sstReader, err := sst_io.NewSSTReader("test_node_get.sst", conf)
+	sstReader, err := reader.NewSSTReader("test_node_get.sst", conf)
 	if err != nil {
 		t.Error(err)
 		return
@@ -80,13 +81,13 @@ func Test_Node_Get(t *testing.T) {
 func Test_Node_binarySearchIndex(t *testing.T) {
 	tests := []struct {
 		name             string
-		index            []*sst_io.Index
+		index            []*writer.Index
 		key              []byte
 		expectIndexExist bool
 		expectIndexKey   []byte
 	}{
 		{
-			index: []*sst_io.Index{
+			index: []*writer.Index{
 				{
 					Key: []byte("a"),
 				},
@@ -97,7 +98,7 @@ func Test_Node_binarySearchIndex(t *testing.T) {
 			key: []byte("c"),
 		},
 		{
-			index: []*sst_io.Index{
+			index: []*writer.Index{
 				{
 					Key: []byte("a"),
 				},
@@ -113,7 +114,7 @@ func Test_Node_binarySearchIndex(t *testing.T) {
 			expectIndexKey:   []byte("d"),
 		},
 		{
-			index: []*sst_io.Index{
+			index: []*writer.Index{
 				{
 					Key: []byte("b"),
 				},
@@ -132,7 +133,7 @@ func Test_Node_binarySearchIndex(t *testing.T) {
 			expectIndexKey:   []byte("b"),
 		},
 		{
-			index: []*sst_io.Index{
+			index: []*writer.Index{
 				{
 					Key: []byte("b"),
 				},
@@ -176,14 +177,14 @@ func Test_Node_Destroy(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	sstWriter, err := sst_io.NewSSTWriter("test_node_destroy.sst", conf)
+	sstWriter, err := writer.NewSSTWriter("test_node_destroy.sst", conf)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer sstWriter.Close()
 
-	kvs := []*sst_io.KV{
+	kvs := []*reader.KV{
 		{
 			Key:   []byte("a"),
 			Value: []byte("b"),
@@ -194,7 +195,7 @@ func Test_Node_Destroy(t *testing.T) {
 	}
 
 	size, blockToFilter, index := sstWriter.Finish()
-	sstReader, err := sst_io.NewSSTReader("test_node_destroy.sst", conf)
+	sstReader, err := reader.NewSSTReader("test_node_destroy.sst", conf)
 	if err != nil {
 		t.Error(err)
 		return

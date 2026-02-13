@@ -29,8 +29,6 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-// createTestTree 创建一个临时目录并初始化 Tree
-// 在测试完成后会自动 Close() 并删除目录
 func createTestTree(tb testing.TB, opts ...omolsm.ConfigOption) *Tree {
 	log.SetOutput(io.Discard)
 	tb.Helper()

@@ -5,6 +5,7 @@ type LSMTree interface {
 	Get(key string) ([]byte, bool, error)
 	Delete(key string) error
 	Scan(startKey, endKey string) ([]*KVResult, error)
+	GetStats() Stats
 	Close()
 }
 

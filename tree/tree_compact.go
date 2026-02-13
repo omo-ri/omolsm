@@ -26,10 +26,9 @@ func (t *Tree) flushMemTable(memTable memtable.MemTable) {
 	}
 
 	size, blockToFilter, index := sstWriter.Finish()
+	t.stats.BytesWritten += size
 	t.insertNode(0, seq, size, blockToFilter, index)
 	sstWriter.Close()
-
-	log.Printf("Flush memtable to level 0, node count: %d\n", len(t.nodes[0]))
 
 	// 级联 compact：从 level 0 开始，逐层检查
 	t.cascadeCompact()
@@ -42,8 +41,8 @@ func (t *Tree) cascadeCompact() {
 		if len(t.nodes[level]) < t.conf.SSTNumPerLevel {
 			break
 		}
-		log.Printf("Level %d has %d nodes (>= %d), compact to level %d\n",
-			level, len(t.nodes[level]), t.conf.SSTNumPerLevel, level+1)
+		//log.Printf("Level %d has %d nodes (>= %d), compact to level %d\n",
+		//	level, len(t.nodes[level]), t.conf.SSTNumPerLevel, level+1)
 		t.compactLevel(level)
 	}
 }
@@ -93,14 +92,15 @@ func (t *Tree) compactLevel(level int) {
 		sstWriter.Append([]byte(kv.Key), kv.Value)
 	}
 	size, blockToFilter, index := sstWriter.Finish()
+	t.stats.BytesWritten += size
 	sstWriter.Close()
 	t.insertNode(nextLevel, seq, size, blockToFilter, index)
 
 	// 4. 删除旧节点
 	t.removeNodes(level, nodes)
 
-	log.Printf("Compact level %d -> %d done, level %d nodes: %d, level %d nodes: %d\n",
-		level, nextLevel, level, len(t.nodes[level]), nextLevel, len(t.nodes[nextLevel]))
+	//log.Printf("Compact level %d -> %d done, level %d nodes: %d, level %d nodes: %d\n",
+	//	level, nextLevel, level, len(t.nodes[level]), nextLevel, len(t.nodes[nextLevel]))
 }
 
 func (t *Tree) removeNodes(level int, toRemove []*node.Node) {

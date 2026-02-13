@@ -17,6 +17,16 @@ type Tree struct {
 	nodes    [][]*node.Node
 
 	levelToSeq []atomic.Int32
+	stats      Stats
+}
+
+type Stats struct {
+	BytesWritten uint64 // 实际写入磁盘的字节数
+	BytesRead    uint64 // 实际从磁盘读取的字节数
+}
+
+func (t *Tree) GetStats() Stats {
+	return t.stats
 }
 
 func NewTree(conf *omolsm.Config) (LSMTree, error) {

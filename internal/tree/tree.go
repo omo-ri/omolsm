@@ -10,7 +10,7 @@ import (
 )
 
 type Tree struct {
-	conf     *config.Config
+	Conf     *config.Config
 	dataLock sync.RWMutex
 
 	memTable memtable.MemTable
@@ -31,7 +31,7 @@ func (t *Tree) GetStats() Stats {
 
 func NewTree(conf *config.Config) (LSMTree, error) {
 	t := &Tree{
-		conf:       conf,
+		Conf:       conf,
 		memTable:   conf.MemTableConstructor(),
 		levelToSeq: make([]atomic.Int32, conf.MaxLevel),
 		nodes:      make([][]*node.Node, conf.MaxLevel),
@@ -45,13 +45,13 @@ func (t *Tree) Put(key string, value []byte) error {
 
 	t.memTable.Put(key, value)
 
-	if t.memTable.Size() < t.conf.SSTSize {
+	if t.memTable.Size() < t.Conf.SSTSize {
 		return nil
 	}
 
 	// memtable 满了，同步 flush + 级联 compact
 	t.flushMemTable(t.memTable)
-	t.memTable = t.conf.MemTableConstructor()
+	t.memTable = t.Conf.MemTableConstructor()
 
 	return nil
 }
@@ -94,13 +94,9 @@ func (t *Tree) Scan(startKey, endKey string) ([]*KVResult, error) {
 	t.dataLock.RLock()
 	defer t.dataLock.RUnlock()
 
-	// 用 map 收集，新值覆盖旧值
 	merged := make(map[string][]byte)
 
-	// 1. 先从 SSTable 收集（旧数据先放，后面被新数据覆盖）
-	// 从高层到低层，旧的先写入 map
 	for level := len(t.nodes) - 1; level >= 0; level-- {
-		// 同层从旧到新
 		for _, n := range t.nodes[level] {
 			kvs, err := n.GetRange([]byte(startKey), []byte(endKey))
 			if err != nil {
@@ -112,7 +108,6 @@ func (t *Tree) Scan(startKey, endKey string) ([]*KVResult, error) {
 		}
 	}
 
-	// 2. 再从 memtable 收集（最新数据，覆盖旧值）
 	allKVs := t.memTable.All()
 	for _, kv := range allKVs {
 		if kv.Key >= startKey && kv.Key < endKey {
@@ -120,11 +115,10 @@ func (t *Tree) Scan(startKey, endKey string) ([]*KVResult, error) {
 		}
 	}
 
-	// 3. 排序 + 过滤墓碑
 	result := make([]*KVResult, 0, len(merged))
 	for k, v := range merged {
 		if v == nil {
-			continue // 跳过已删除的 key
+			continue
 		}
 		result = append(result, &KVResult{Key: k, Value: v})
 	}

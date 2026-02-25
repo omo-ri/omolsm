@@ -1,4 +1,4 @@
-package tree
+package test
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/rand"
 	"omolsm/config"
+	"omolsm/internal/tree"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +29,7 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-func createTestTree(tb testing.TB, opts ...config.ConfigOption) *Tree {
+func createTestTree(tb testing.TB, opts ...config.ConfigOption) *tree.Tree {
 	log.SetOutput(io.Discard)
 	tb.Helper()
 	dir := filepath.Join(os.TempDir(), fmt.Sprintf("omolsm_bench_%d", time.Now().UnixNano()))
@@ -38,7 +39,7 @@ func createTestTree(tb testing.TB, opts ...config.ConfigOption) *Tree {
 		tb.Fatalf("NewConfig failed: %v", err)
 	}
 
-	lsm, err := NewTree(conf)
+	lsm, err := tree.NewTree(conf)
 	if err != nil {
 		tb.Fatalf("NewTree failed: %v", err)
 	}
@@ -49,7 +50,7 @@ func createTestTree(tb testing.TB, opts ...config.ConfigOption) *Tree {
 		os.RemoveAll(dir)
 	})
 
-	return lsm.(*Tree)
+	return lsm.(*tree.Tree)
 }
 
 // dirSize 计算目录下所有文件的总字节数（递归）
@@ -97,9 +98,9 @@ func estimateLogicalBytes(numOps int64, keyLen int, valueLen int) int64 {
 }
 
 // reportSpaceMetrics 通过 b.ReportMetric 上报磁盘占用、逻辑字节与 space_amp 等指标
-func reportSpaceMetrics(b *testing.B, t *Tree, numOps int64, keySize int, valueSize int) {
+func reportSpaceMetrics(b *testing.B, t *tree.Tree, numOps int64, keySize int, valueSize int) {
 	b.Helper()
-	dir := t.conf.Dir
+	dir := t.Conf.Dir
 
 	diskBytes, err := dirSize(dir)
 	if err != nil {

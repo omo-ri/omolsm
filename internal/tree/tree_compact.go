@@ -15,7 +15,7 @@ func (t *Tree) flushMemTable(memTable memtable.MemTable) {
 	kvs := memTable.All()
 	seq := t.levelToSeq[0].Add(1)
 
-	sstWriter, err := writer.NewSSTWriter(t.sstFile(0, seq), t.conf)
+	sstWriter, err := writer.NewSSTWriter(t.sstFile(0, seq), t.Conf)
 	if err != nil {
 		log.Printf("Error creating SST writer for level 0 seq %d: %v\n", seq, err)
 		return
@@ -37,8 +37,8 @@ func (t *Tree) flushMemTable(memTable memtable.MemTable) {
 // cascadeCompact 从 level 0 开始，如果某层节点数 >= 阈值就合并到下一层，
 // 然后继续检查下一层，直到不需要 compact 或到达最后一层.
 func (t *Tree) cascadeCompact() {
-	for level := 0; level < t.conf.MaxLevel-1; level++ {
-		if len(t.nodes[level]) < t.conf.SSTNumPerLevel {
+	for level := 0; level < t.Conf.MaxLevel-1; level++ {
+		if len(t.nodes[level]) < t.Conf.SSTNumPerLevel {
 			break
 		}
 		//log.Printf("Level %d has %d nodes (>= %d), compact to level %d\n",
@@ -49,7 +49,7 @@ func (t *Tree) cascadeCompact() {
 
 // compactLevel 使用多路归并迭代器，避免将所有数据一次性加载到内存.
 func (t *Tree) compactLevel(level int) {
-	if level >= t.conf.MaxLevel-1 {
+	if level >= t.Conf.MaxLevel-1 {
 		return
 	}
 
@@ -58,21 +58,17 @@ func (t *Tree) compactLevel(level int) {
 		return
 	}
 
-	// 1. 为每个 node 创建迭代器（此时不读数据，只是初始化）
 	iters := make([]iterator.Iterator, 0, len(nodes))
 	for _, n := range nodes {
-		// 需要 Node 暴露 SSTReader() 和 IndexEntries() 方法
 		it := iterator.NewNodeIterator(n, n.SSTReader(), n.IndexEntries())
 		iters = append(iters, it)
 	}
 
-	// 2. 构建多路归并迭代器
 	mergeIter := iterator.NewMergeIterator(iters)
 
-	// 3. 流式写入下一层
 	nextLevel := level + 1
 	seq := t.levelToSeq[nextLevel].Add(1)
-	sstWriter, err := writer.NewSSTWriter(t.sstFile(nextLevel, seq), t.conf)
+	sstWriter, err := writer.NewSSTWriter(t.sstFile(nextLevel, seq), t.Conf)
 	if err != nil {
 		log.Printf("Error creating SST writer: %v\n", err)
 		return
@@ -116,12 +112,12 @@ func (t *Tree) removeNodes(level int, toRemove []*node.Node) {
 
 func (t *Tree) insertNode(level int, seq int32, size uint64, blockToFilter map[uint64][]byte, index []*writer.Index) {
 	file := t.sstFile(level, seq)
-	sstReader, err := reader.NewSSTReader(file, t.conf)
+	sstReader, err := reader.NewSSTReader(file, t.Conf)
 	if err != nil {
 		log.Printf("Error creating SST reader for %s: %v\n", file, err)
 		return
 	}
-	newNode := node.NewNode(t.conf, file, sstReader, level, seq, size, blockToFilter, index)
+	newNode := node.NewNode(t.Conf, file, sstReader, level, seq, size, blockToFilter, index)
 	t.nodes[level] = append(t.nodes[level], newNode)
 }
 

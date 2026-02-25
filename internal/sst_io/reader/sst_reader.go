@@ -6,8 +6,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"omolsm"
-	sstio "omolsm/sst_io/writer"
+	"omolsm/config"
+	sstio "omolsm/internal/sst_io/writer"
 	"os"
 	"path"
 )
@@ -20,7 +20,7 @@ type KV struct {
 
 // 对应于 lsm tree 中的一个 sstable. 这是读取流程的视角
 type SSTReader struct {
-	conf         *omolsm.Config // 配置文件
+	conf         *config.Config // 配置文件
 	src          *os.File       // 对应的文件
 	reader       *bufio.Reader  // 读取文件的 reader
 	filterOffset uint64         // 过滤器块起始位置在 sstable 的 offset
@@ -30,7 +30,7 @@ type SSTReader struct {
 }
 
 // sstReader 构造器
-func NewSSTReader(file string, conf *omolsm.Config) (*SSTReader, error) {
+func NewSSTReader(file string, conf *config.Config) (*SSTReader, error) {
 	src, err := os.OpenFile(path.Join(conf.Dir, file), os.O_RDONLY, 0644)
 	if err != nil {
 		return nil, err

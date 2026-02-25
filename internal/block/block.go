@@ -4,25 +4,26 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
-	"omolsm"
-	"omolsm/util"
+	"omolsm/config"
+	"omolsm/internal/util"
 )
 
 type Block struct {
-	conf    *omolsm.Config
+	conf    *config.Config
 	buffer  [30]byte
 	record  *bytes.Buffer
 	kvsCnt  int
 	prevKey []byte
 }
 
-func NewBlock(conf *omolsm.Config) *Block {
+func NewBlock(conf *config.Config) *Block {
 	return &Block{
 		conf:   conf,
 		record: new(bytes.Buffer),
 	}
 }
 
+// | keySuffixLen | valueLen | keySuffix | value
 func (b *Block) Append(key, value []byte) {
 	defer func() {
 		b.prevKey = append(b.prevKey[:0], key...)

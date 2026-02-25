@@ -2,14 +2,14 @@ package node
 
 import (
 	"bytes"
-	"omolsm"
-	"omolsm/sst_io/reader"
-	writer "omolsm/sst_io/writer"
+	"omolsm/config"
+	"omolsm/internal/sst_io/reader"
+	writer "omolsm/internal/sst_io/writer"
 	"testing"
 )
 
 func Test_Node_Get(t *testing.T) {
-	conf, err := omolsm.NewConfig("./lsm")
+	conf, err := config.NewConfig("./lsm")
 	if err != nil {
 		t.Error(err)
 		return
@@ -172,7 +172,7 @@ func Test_Node_binarySearchIndex(t *testing.T) {
 }
 
 func Test_Node_Destroy(t *testing.T) {
-	conf, err := omolsm.NewConfig("./lsm")
+	conf, err := config.NewConfig("./lsm")
 	if err != nil {
 		t.Error(err)
 		return

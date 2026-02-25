@@ -1,9 +1,9 @@
-package omolsm
+package config
 
 import (
 	"fmt"
-	"omolsm/filter"
-	"omolsm/memtable"
+	"omolsm/internal/filter"
+	"omolsm/internal/memtable"
 	"os"
 )
 
@@ -17,7 +17,8 @@ type Config struct {
 	SSTDataBlockSize int // sst table 中 block 大小 默认 16KB
 	SSTFooterSize    int // sst table 中 footer 部分大小. 固定为 32B
 
-	Filter              filter.Filter                // 过滤器. 默认使用布隆过滤器
+	Filter              filter.Filter                // 供 Node 读路径 Exist 调用（只读，无状态）
+	FilterConstructor   func() filter.Filter         // 供 SSTWriter 创建独立实例（写路径，有状态）
 	MemTableConstructor memtable.MemTableConstructor // memtable 构造器，默认为跳表
 }
 
@@ -31,7 +32,8 @@ func NewConfig(dir string, opts ...ConfigOption) (*Config, error) {
 		SSTNumPerLevel:      10,
 		SSTFooterSize:       32,
 		Filter:              filter.NewBloomFilter(10240), // 10240 bit ≈ 1.25KB
-		MemTableConstructor: memtable.NewMapMemTable,
+		FilterConstructor:   func() filter.Filter { return filter.NewBloomFilter(10240) },
+		MemTableConstructor: memtable.NewTreeMapMemTable,
 	}
 
 	for _, opt := range opts {
@@ -42,16 +44,12 @@ func NewConfig(dir string, opts ...ConfigOption) (*Config, error) {
 }
 
 func (c *Config) check() error {
-	// 尝试读取目录
 	if _, err := os.ReadDir(c.Dir); err != nil {
-		// 使用标准库方法判断是否是"不存在"错误
 		if os.IsNotExist(err) {
-			// 目录不存在，创建它
 			if err = os.MkdirAll(c.Dir, os.ModePerm); err != nil {
 				return fmt.Errorf("创建目录失败: %w", err)
 			}
 		} else {
-			// 其他错误（权限不足、不是目录等）
 			return fmt.Errorf("检查目录失败: %w", err)
 		}
 	}
@@ -90,9 +88,16 @@ func WithSSTNumPerLevel(sstNumPerLevel int) ConfigOption {
 }
 
 // WithFilter 注入过滤器的具体实现. 默认使用本项目下实现的布隆过滤器 bloom filter.
-func WithFilter(filter filter.Filter) ConfigOption {
+func WithFilter(f filter.Filter) ConfigOption {
 	return func(c *Config) {
-		c.Filter = filter
+		c.Filter = f
+	}
+}
+
+// WithFilterConstructor 注入过滤器构造器，供 SSTWriter 为每个实例创建独立 filter.
+func WithFilterConstructor(fc func() filter.Filter) ConfigOption {
+	return func(c *Config) {
+		c.FilterConstructor = fc
 	}
 }
 

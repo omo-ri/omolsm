@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"omolsm"
+	"omolsm/config"
 	"testing"
 )
 
@@ -19,9 +19,9 @@ func generateRandomString(rng *rand.Rand, minLen, maxLen int) string {
 
 func Test_WriteAmplification_Bounded(t *testing.T) {
 	dir := t.TempDir()
-	conf, err := omolsm.NewConfig(dir,
-		omolsm.WithSSTSize(1024),
-		omolsm.WithSSTNumPerLevel(4),
+	conf, err := config.NewConfig(dir,
+		config.WithSSTSize(1024),
+		config.WithSSTNumPerLevel(4),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -82,9 +82,9 @@ func Test_WriteAmplification_ScalesWithData(t *testing.T) {
 
 	for _, ops := range sizes {
 		dir := t.TempDir()
-		conf, _ := omolsm.NewConfig(dir,
-			omolsm.WithSSTSize(1024),
-			omolsm.WithSSTNumPerLevel(4),
+		conf, _ := config.NewConfig(dir,
+			config.WithSSTSize(1024),
+			config.WithSSTNumPerLevel(4),
 		)
 		tr, _ := NewTree(conf)
 
@@ -113,9 +113,9 @@ func Test_WriteAmplification_ScalesWithData(t *testing.T) {
 
 func Test_ReadAmplification(t *testing.T) {
 	dir := t.TempDir()
-	conf, _ := omolsm.NewConfig(dir,
-		omolsm.WithSSTSize(1024),
-		omolsm.WithSSTNumPerLevel(4),
+	conf, _ := config.NewConfig(dir,
+		config.WithSSTSize(1024),
+		config.WithSSTNumPerLevel(4),
 	)
 	tr, _ := NewTree(conf)
 	defer tr.Close()

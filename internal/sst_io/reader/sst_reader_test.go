@@ -3,11 +3,10 @@ package reader
 import (
 	"bytes"
 	"fmt"
+	"omolsm/config"
+	"omolsm/internal/filter"
+	"omolsm/internal/sst_io/writer"
 	"testing"
-
-	"omolsm"
-	"omolsm/filter"
-	sst_io "omolsm/sst_io/writer"
 )
 
 // ============================================================================
@@ -15,7 +14,7 @@ import (
 // ============================================================================
 
 // writeSST 用 SSTWriter 写入一批有序 KV，返回 writer 的产出物用于比对
-func writeSST(t *testing.T, conf *omolsm.Config, kvs []KV) (size uint64, blockToFilter map[uint64][]byte, index []*sst_io.Index) {
+func writeSST(t *testing.T, conf *config.Config, kvs []KV) (size uint64, blockToFilter map[uint64][]byte, index []*sst_io.Index) {
 	t.Helper()
 	w, err := sst_io.NewSSTWriter("test.sst", conf)
 	if err != nil {
@@ -29,13 +28,14 @@ func writeSST(t *testing.T, conf *omolsm.Config, kvs []KV) (size uint64, blockTo
 	return
 }
 
-func newTestConf(t *testing.T, blockSize int) *omolsm.Config {
+func newTestConf(t *testing.T, blockSize int) *config.Config {
 	t.Helper()
-	return &omolsm.Config{
-		Dir:              t.TempDir(),
-		SSTFooterSize:    32,
-		SSTDataBlockSize: blockSize,
-		Filter:           filter.NewBloomFilter(1024),
+	return &config.Config{
+		Dir:               t.TempDir(),
+		SSTFooterSize:     32,
+		SSTDataBlockSize:  blockSize,
+		Filter:            filter.NewBloomFilter(1024),
+		FilterConstructor: func() filter.Filter { return filter.NewBloomFilter(1024) },
 	}
 }
 
@@ -193,8 +193,6 @@ func TestReadFilter(t *testing.T) {
 	conf := newTestConf(t, 32)
 	_, writerFilter, _ := writeSST(t, conf, makeKVs(20))
 
-	// 需要新的 filter 实例给 reader 用
-	conf.Filter = filter.NewBloomFilter(1024)
 	r, err := NewSSTReader("test.sst", conf)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +230,6 @@ func TestReadIndex(t *testing.T) {
 	conf := newTestConf(t, 32)
 	_, _, writerIndex := writeSST(t, conf, makeKVs(20))
 
-	conf.Filter = filter.NewBloomFilter(1024)
 	r, err := NewSSTReader("test.sst", conf)
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +332,6 @@ func TestMultipleReads(t *testing.T) {
 	kvs := makeKVs(30)
 	writeSST(t, conf, kvs)
 
-	conf.Filter = filter.NewBloomFilter(1024)
 	r, err := NewSSTReader("test.sst", conf)
 	if err != nil {
 		t.Fatal(err)

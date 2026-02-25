@@ -3,8 +3,9 @@ package sst_io
 import (
 	"bytes"
 	"encoding/binary"
-	"omolsm"
-	"omolsm/block"
+	"omolsm/config"
+	"omolsm/internal/block"
+	"omolsm/internal/filter"
 	"os"
 	"path"
 )
@@ -16,7 +17,8 @@ type Index struct {
 }
 
 type SSTWriter struct {
-	conf          *omolsm.Config
+	conf          *config.Config
+	filter        filter.Filter // 每个 writer 独立的 filter 实例
 	dest          *os.File
 	dataBuf       *bytes.Buffer
 	filterBuf     *bytes.Buffer
@@ -34,14 +36,15 @@ type SSTWriter struct {
 	prevBlockSize   uint64
 }
 
-func NewSSTWriter(file string, conf *omolsm.Config) (*SSTWriter, error) {
-	dest, err := os.OpenFile(path.Join(conf.Dir, file), os.O_CREATE|os.O_WRONLY, 0644)
+func NewSSTWriter(file string, conf *config.Config) (*SSTWriter, error) {
+	dest, err := os.OpenFile(path.Join(conf.Dir, file), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SSTWriter{
 		conf:          conf,
+		filter:        conf.FilterConstructor(),
 		dest:          dest,
 		dataBuf:       new(bytes.Buffer),
 		filterBuf:     new(bytes.Buffer),
@@ -96,7 +99,7 @@ func (s *SSTWriter) Append(key, value []byte) {
 	// 将数据写入到数据块中
 	s.dataBlock.Append(key, value)
 	// 将 key 添加到块的布隆过滤器中
-	s.conf.Filter.Add(key)
+	s.filter.Add(key)
 	// 记录一下最新的 key（深拷贝，防止调用方复用 buffer 导致污染）
 	s.prevKey = append(s.prevKey[:0], key...)
 
@@ -135,18 +138,18 @@ func (s *SSTWriter) insertIndex() {
 }
 
 func (s *SSTWriter) refreshBlock() {
-	if s.conf.Filter.KeyLen() == 0 {
+	if s.filter.KeyLen() == 0 {
 		return
 	}
 
 	s.prevBlockOffset = uint64(s.dataBuf.Len())
 	// 添加布隆过滤器 bitmap
-	filterBitmap := s.conf.Filter.Hash()
+	filterBitmap := s.filter.Hash()
 	s.blockToFilter[s.prevBlockOffset] = filterBitmap
 	n := binary.PutUvarint(s.assistScratch[0:], s.prevBlockOffset)
 	s.filterBlock.Append(s.assistScratch[:n], filterBitmap)
 	// 重置布隆过滤器
-	s.conf.Filter.Reset()
+	s.filter.Reset()
 
 	// 将 block 的数据添加到缓冲区
 	s.prevBlockSize, _ = s.dataBlock.FlushTo(s.dataBuf)

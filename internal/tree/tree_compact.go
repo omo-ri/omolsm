@@ -3,11 +3,11 @@ package tree
 import (
 	"fmt"
 	"log"
-	"omolsm/memtable"
-	"omolsm/node"
-	"omolsm/sst_io/reader"
-	writer "omolsm/sst_io/writer"
-	"sort"
+	iterator "omolsm/internal/interator"
+	"omolsm/internal/memtable"
+	"omolsm/internal/node"
+	"omolsm/internal/sst_io/reader"
+	writer "omolsm/internal/sst_io/writer"
 )
 
 // flushMemTable 将 memtable 同步写入 level 0，然后级联检查各层是否需要 compact.
@@ -47,6 +47,7 @@ func (t *Tree) cascadeCompact() {
 	}
 }
 
+// compactLevel 使用多路归并迭代器，避免将所有数据一次性加载到内存.
 func (t *Tree) compactLevel(level int) {
 	if level >= t.conf.MaxLevel-1 {
 		return
@@ -57,40 +58,36 @@ func (t *Tree) compactLevel(level int) {
 		return
 	}
 
-	// 1. 多路归并：新值覆盖旧值
-	merged := make(map[string][]byte)
+	// 1. 为每个 node 创建迭代器（此时不读数据，只是初始化）
+	iters := make([]iterator.Iterator, 0, len(nodes))
 	for _, n := range nodes {
-		kvs, err := n.GetAll()
-		if err != nil {
-			log.Printf("Error reading node %s: %v\n", n.GetFile(), err)
-			return
-		}
-		for _, kv := range kvs {
-			merged[string(kv.Key)] = kv.Value
-		}
+		// 需要 Node 暴露 SSTReader() 和 IndexEntries() 方法
+		it := iterator.NewNodeIterator(n, n.SSTReader(), n.IndexEntries())
+		iters = append(iters, it)
 	}
 
-	// 2. 排序
-	sortedKVs := make([]*memtable.KV, 0, len(merged))
-	for k, v := range merged {
-		sortedKVs = append(sortedKVs, &memtable.KV{Key: k, Value: v})
-	}
-	sort.Slice(sortedKVs, func(i, j int) bool {
-		return sortedKVs[i].Key < sortedKVs[j].Key
-	})
+	// 2. 构建多路归并迭代器
+	mergeIter := iterator.NewMergeIterator(iters)
 
-	// 3. 写入下一层
+	// 3. 流式写入下一层
 	nextLevel := level + 1
 	seq := t.levelToSeq[nextLevel].Add(1)
 	sstWriter, err := writer.NewSSTWriter(t.sstFile(nextLevel, seq), t.conf)
 	if err != nil {
-		log.Printf("Error creating SST writer for level %d seq %d: %v\n", nextLevel, seq, err)
+		log.Printf("Error creating SST writer: %v\n", err)
 		return
 	}
 
-	for _, kv := range sortedKVs {
-		sstWriter.Append([]byte(kv.Key), kv.Value)
+	for mergeIter.Next() {
+		sstWriter.Append(mergeIter.Key(), mergeIter.Value())
 	}
+
+	if mergeIter.Err() != nil {
+		log.Printf("Merge iteration error: %v\n", mergeIter.Err())
+		sstWriter.Close()
+		return
+	}
+
 	size, blockToFilter, index := sstWriter.Finish()
 	t.stats.BytesWritten += size
 	sstWriter.Close()
@@ -98,9 +95,6 @@ func (t *Tree) compactLevel(level int) {
 
 	// 4. 删除旧节点
 	t.removeNodes(level, nodes)
-
-	//log.Printf("Compact level %d -> %d done, level %d nodes: %d, level %d nodes: %d\n",
-	//	level, nextLevel, level, len(t.nodes[level]), nextLevel, len(t.nodes[nextLevel]))
 }
 
 func (t *Tree) removeNodes(level int, toRemove []*node.Node) {

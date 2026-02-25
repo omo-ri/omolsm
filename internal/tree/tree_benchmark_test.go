@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"omolsm"
+	"omolsm/config"
 	"testing"
 )
 
 func setupBenchTree(b *testing.B) LSMTree {
 	log.SetOutput(io.Discard)
 	dir := b.TempDir()
-	conf, err := omolsm.NewConfig(dir)
+	conf, err := config.NewConfig(dir)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func setupBenchTree(b *testing.B) LSMTree {
 func setupBenchTreeSmall(b *testing.B) LSMTree {
 	log.SetOutput(io.Discard)
 	dir := b.TempDir()
-	conf, err := omolsm.NewConfig(dir, omolsm.WithSSTSize(256))
+	conf, err := config.NewConfig(dir, config.WithSSTSize(256))
 	if err != nil {
 		b.Fatal(err)
 	}

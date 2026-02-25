@@ -5,12 +5,11 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"omolsm/config"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	"omolsm"
 )
 
 const (
@@ -29,12 +28,12 @@ func randomBytes(n int) []byte {
 	return b
 }
 
-func createTestTree(tb testing.TB, opts ...omolsm.ConfigOption) *Tree {
+func createTestTree(tb testing.TB, opts ...config.ConfigOption) *Tree {
 	log.SetOutput(io.Discard)
 	tb.Helper()
 	dir := filepath.Join(os.TempDir(), fmt.Sprintf("omolsm_bench_%d", time.Now().UnixNano()))
 
-	conf, err := omolsm.NewConfig(dir, opts...)
+	conf, err := config.NewConfig(dir, opts...)
 	if err != nil {
 		tb.Fatalf("NewConfig failed: %v", err)
 	}
@@ -276,7 +275,7 @@ func Benchmark_SSTSize_Variants(b *testing.B) {
 	for _, s := range sizes {
 		sz := s
 		b.Run(fmt.Sprintf("SST_%dKB", sz/1024), func(b *testing.B) {
-			tree := createTestTree(b, omolsm.WithSSTSize(sz))
+			tree := createTestTree(b, config.WithSSTSize(sz))
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

@@ -1,16 +1,16 @@
 package tree
 
 import (
-	"omolsm"
-	"omolsm/memtable"
-	"omolsm/node"
+	"omolsm/config"
+	"omolsm/internal/memtable"
+	"omolsm/internal/node"
 	"sort"
 	"sync"
 	"sync/atomic"
 )
 
 type Tree struct {
-	conf     *omolsm.Config
+	conf     *config.Config
 	dataLock sync.RWMutex
 
 	memTable memtable.MemTable
@@ -29,7 +29,7 @@ func (t *Tree) GetStats() Stats {
 	return t.stats
 }
 
-func NewTree(conf *omolsm.Config) (LSMTree, error) {
+func NewTree(conf *config.Config) (LSMTree, error) {
 	t := &Tree{
 		conf:       conf,
 		memTable:   conf.MemTableConstructor(),

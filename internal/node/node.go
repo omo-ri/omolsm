@@ -3,15 +3,15 @@ package node
 import (
 	"bytes"
 	"log"
-	"omolsm"
-	"omolsm/sst_io/reader"
-	writer "omolsm/sst_io/writer"
+	"omolsm/config"
+	"omolsm/internal/sst_io/reader"
+	writer "omolsm/internal/sst_io/writer"
 	"os"
 	"path"
 )
 
 type Node struct {
-	conf          *omolsm.Config    // 配置文件
+	conf          *config.Config    // 配置文件
 	file          string            // sstable 对应的文件名，不含目录路径
 	level         int               // sstable 所在 level 层级
 	seq           int32             // sstable 的 seq 序列号. 对应为文件名中的 level_seq.sst 中的 seq
@@ -23,7 +23,7 @@ type Node struct {
 	sstReader     *reader.SSTReader // 读取 sst 文件的 reader 入口
 }
 
-func NewNode(conf *omolsm.Config, file string, sstReader *reader.SSTReader, level int, seq int32,
+func NewNode(conf *config.Config, file string, sstReader *reader.SSTReader, level int, seq int32,
 	size uint64, blockToFilter map[uint64][]byte, index []*writer.Index) *Node {
 
 	return &Node{
@@ -47,6 +47,9 @@ func (n *Node) GetAll() ([]*reader.KV, error) {
 func (n *Node) GetFile() string {
 	return n.file
 }
+
+func (n *Node) SSTReader() *reader.SSTReader  { return n.sstReader }
+func (n *Node) IndexEntries() []*writer.Index { return n.index }
 
 // 查看是否在节点中
 func (n *Node) Get(key []byte) ([]byte, bool, error) {

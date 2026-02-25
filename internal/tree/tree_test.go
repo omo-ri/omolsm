@@ -2,13 +2,13 @@ package tree
 
 import (
 	"fmt"
-	"omolsm"
+	"omolsm/config"
 	"testing"
 )
 
 func setupTestTree(t *testing.T) LSMTree {
 	dir := t.TempDir()
-	conf, err := omolsm.NewConfig(dir)
+	conf, err := config.NewConfig(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func Test_Scan_All(t *testing.T) {
 func Test_Put_Triggers_Flush(t *testing.T) {
 	dir := t.TempDir()
 	// 小阈值，容易触发 flush
-	conf, err := omolsm.NewConfig(dir, omolsm.WithSSTSize(256))
+	conf, err := config.NewConfig(dir, config.WithSSTSize(256))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func Test_Put_Triggers_Flush(t *testing.T) {
 // flush 后删除仍然生效
 func Test_Delete_After_Flush(t *testing.T) {
 	dir := t.TempDir()
-	conf, _ := omolsm.NewConfig(dir, omolsm.WithSSTSize(256))
+	conf, _ := config.NewConfig(dir, config.WithSSTSize(256))
 	tr, _ := NewTree(conf)
 	defer tr.Close()
 
@@ -329,7 +329,7 @@ func Test_Delete_After_Flush(t *testing.T) {
 // Scan 跨 memtable 和 SSTable
 func Test_Scan_Across_Flush(t *testing.T) {
 	dir := t.TempDir()
-	conf, _ := omolsm.NewConfig(dir, omolsm.WithSSTSize(256))
+	conf, _ := config.NewConfig(dir, config.WithSSTSize(256))
 	tr, _ := NewTree(conf)
 	defer tr.Close()
 

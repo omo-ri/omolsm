@@ -4,21 +4,20 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"omolsm/config"
+	"omolsm/internal/filter"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"omolsm"
-	"omolsm/filter"
 )
 
 // ============================================================================
 // Helper
 // ============================================================================
 
-func newTestWriter(t *testing.T, blockSize int) (*SSTWriter, *omolsm.Config) {
+func newTestWriter(t *testing.T, blockSize int) (*SSTWriter, *config.Config) {
 	t.Helper()
-	conf := &omolsm.Config{
+	conf := &config.Config{
 		Dir:              t.TempDir(),
 		SSTFooterSize:    32,
 		SSTDataBlockSize: blockSize,
@@ -44,7 +43,7 @@ func TestNewSSTWriter(t *testing.T) {
 }
 
 func TestNewSSTWriter_InvalidDir(t *testing.T) {
-	conf := &omolsm.Config{
+	conf := &config.Config{
 		Dir:              "/nonexistent/path/that/should/fail",
 		SSTFooterSize:    32,
 		SSTDataBlockSize: 64,

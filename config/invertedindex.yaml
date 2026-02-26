@@ -1,0 +1,28 @@
+source:
+  dir: "./documents"        # txt 文件所在目录
+  encoding: "utf-8"         # 文件编码
+  extensions:               # 要索引的文件后缀
+    - ".txt"
+
+# 语言
+language: "auto"            # auto / english / russian
+
+# 建索引时的文本处理
+index:
+  stop_words: true          # 去停用词
+  stemming: true            # 词干提取
+  strip_accents: false      # 去重音 (café → cafe)
+  normalize: true           # 小写 + Unicode NFC 归一化
+  min_term_length: 1        # 最短词长，短于此的丢弃
+
+# 查询时的文本处理
+query:
+  stop_words: false         # 查询时不去停用词（允许用户搜任意词）
+  stemming: true            # 必须跟 index.stemming 一致
+  strip_accents: false      # 必须跟 index.strip_accents 一致
+  normalize: true           # 必须跟 index.normalize 一致
+
+# 自定义停用词
+custom_stop_words:
+  english: []               # 额外的英文停用词，如 ["custom", "words"]
+  russian: []               # 额外的俄文停用词

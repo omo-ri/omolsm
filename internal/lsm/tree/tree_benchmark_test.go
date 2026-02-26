@@ -1,36 +1,35 @@
-package test
+package tree
 
 import (
 	"fmt"
 	"io"
 	"log"
 	"omolsm/config"
-	tree2 "omolsm/internal/lsm/tree"
 	"testing"
 )
 
-func setupBenchTree(b *testing.B) tree2.LSMTree {
+func setupBenchTree(b *testing.B) LSMTree {
 	log.SetOutput(io.Discard)
 	dir := b.TempDir()
 	conf, err := config.NewConfig(dir)
 	if err != nil {
 		b.Fatal(err)
 	}
-	tr, err := tree2.NewTree(conf)
+	tr, err := NewTree(conf)
 	if err != nil {
 		b.Fatal(err)
 	}
 	return tr
 }
 
-func setupBenchTreeSmall(b *testing.B) tree2.LSMTree {
+func setupBenchTreeSmall(b *testing.B) LSMTree {
 	log.SetOutput(io.Discard)
 	dir := b.TempDir()
 	conf, err := config.NewConfig(dir, config.WithSSTSize(256))
 	if err != nil {
 		b.Fatal(err)
 	}
-	tr, err := tree2.NewTree(conf)
+	tr, err := NewTree(conf)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -38,7 +37,7 @@ func setupBenchTreeSmall(b *testing.B) tree2.LSMTree {
 }
 
 // 预写入数据，返回写入数量
-func preload(b *testing.B, tr tree2.LSMTree, count int) {
+func preload(b *testing.B, tr LSMTree, count int) {
 	for i := 0; i < count; i++ {
 		tr.Put(fmt.Sprintf("key_%08d", i), []byte("value_12345678"))
 	}

@@ -86,9 +86,68 @@ func (n *Node) Get(key []byte) ([]byte, bool, error) {
 	return nil, false, nil
 }
 
-// node 包中添加
+// GetRange 优化版: 利用 index 二分定位，只读必要的 block.
 func (n *Node) GetRange(startKey, endKey []byte) ([]*reader.KV, error) {
-	// 读取所有 block，筛选 startKey <= key < endKey 的 KV
+	// 1. 快速排除: SST 范围与查询范围不相交
+	if bytes.Compare(startKey, n.endKey) > 0 || bytes.Compare(endKey, n.startKey) <= 0 {
+		return nil, nil
+	}
+
+	// 2. 二分找到 startKey 可能所在的第一个 block.
+	//    index[i].Key 是 block i 的最大 key.
+	//    找第一个 index[i].Key >= startKey 的 i.
+	startIdx := n.findFirstBlock(startKey)
+
+	// 3. 从 startIdx 开始逐 block 读取，直到超出 endKey 范围.
+	var result []*reader.KV
+	for i := startIdx; i < len(n.index); i++ {
+		idx := n.index[i]
+
+		// 读取该 block
+		block, err := n.sstReader.ReadBlock(idx.PrevBlockOffset, idx.PrevBlockSize)
+		if err != nil {
+			return nil, err
+		}
+
+		kvs, err := n.sstReader.ReadBlockData(block)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, kv := range kvs {
+			if bytes.Compare(kv.Key, startKey) >= 0 && bytes.Compare(kv.Key, endKey) < 0 {
+				result = append(result, kv)
+			}
+		}
+
+		// index[i].Key 是当前 block 的最大 key.
+		// 如果它已经 >= endKey，后续 block 的 key 只会更大，全部跳过.
+		if bytes.Compare(idx.Key, endKey) >= 0 {
+			break
+		}
+	}
+
+	return result, nil
+}
+
+// findFirstBlock 二分查找: 找第一个 index[i].Key >= startKey 的 i.
+// 因为 index[i].Key 是 block 的最大 key，如果 index[i].Key < startKey，
+// 则该 block 内所有 key 都 < startKey，可以跳过.
+func (n *Node) findFirstBlock(startKey []byte) int {
+	lo, hi := 0, len(n.index)-1
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if bytes.Compare(n.index[mid].Key, startKey) < 0 {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+// GetRangeUnoptimized 优化前的原始版本, 保留用于 benchmark 对比.
+func (n *Node) GetRangeUnoptimized(startKey, endKey []byte) ([]*reader.KV, error) {
 	allKVs, err := n.GetAll()
 	if err != nil {
 		return nil, err
@@ -96,7 +155,7 @@ func (n *Node) GetRange(startKey, endKey []byte) ([]*reader.KV, error) {
 
 	var result []*reader.KV
 	for _, kv := range allKVs {
-		if string(kv.Key) >= string(startKey) && string(kv.Key) < string(endKey) {
+		if bytes.Compare(kv.Key, startKey) >= 0 && bytes.Compare(kv.Key, endKey) < 0 {
 			result = append(result, kv)
 		}
 	}

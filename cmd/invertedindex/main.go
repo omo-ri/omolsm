@@ -15,11 +15,14 @@ func main() {
 		cfgPath = os.Args[1]
 	}
 
-	e, err := engine.NewEngineFromConfig(cfgPath)
+	e, err := engine.NewEngineFromConfigPath(cfgPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
+	defer e.Close()
+
+	printBanner(e)
 
 	fmt.Println("Indexing documents...")
 	if err := e.IndexSource(); err != nil {
@@ -47,8 +50,7 @@ func main() {
 		case ":quit", ":q":
 			return
 		case ":stats":
-			s := e.Stats()
-			fmt.Printf("  docs: %d, terms: %d, features: %d\n", s.DocCount, s.TermCount, s.FeatureCount)
+			printStats(e)
 		case ":help":
 			printHelp()
 		default:
@@ -59,6 +61,40 @@ func main() {
 			}
 			printResult(result)
 		}
+	}
+}
+
+func printBanner(e *engine.Engine) {
+	conf := e.Config()
+	fmt.Println("========================================")
+	fmt.Println("  Inverted Index Engine")
+	fmt.Println("========================================")
+	fmt.Printf("  Storage backend : %s\n", conf.Storage.Backend)
+	if conf.Storage.Backend == "lsm" {
+		dataDir := conf.Storage.DataDir
+		if dataDir == "" {
+			dataDir = ".lsm-data"
+		}
+		fmt.Printf("  Data dir        : %s\n", dataDir)
+		fmt.Printf("  Block size      : %d\n", conf.Storage.BlockSize)
+		fmt.Printf("  SST size        : %d bytes\n", conf.Storage.SSTSize)
+		fmt.Printf("  SST block size  : %d bytes\n", conf.Storage.SSTBlockSize)
+		fmt.Printf("  SSTs per level  : %d\n", conf.Storage.SSTNumPerLevel)
+		fmt.Printf("  Max levels      : %d\n", conf.Storage.MaxLevel)
+	}
+	fmt.Printf("  Language        : %s\n", conf.Language)
+	fmt.Printf("  Source dir      : %s\n", conf.Source.Dir)
+	fmt.Printf("  Stemming        : %v\n", conf.Index.Stemming)
+	fmt.Printf("  Stop words      : %v\n", conf.Index.StopWords)
+	fmt.Println("========================================")
+	fmt.Println()
+}
+
+func printStats(e *engine.Engine) {
+	s := e.Stats()
+	fmt.Printf("  docs: %d, terms: %d, features: %d\n", s.DocCount, s.TermCount, s.FeatureCount)
+	if report := e.LSMStatsReport(); report != "" {
+		fmt.Print(report)
 	}
 }
 

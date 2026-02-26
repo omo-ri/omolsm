@@ -4,8 +4,11 @@ source:
   extensions:               # 要索引的文件后缀
     - ".txt"
 
-# 语言
-language: "auto"            # auto / english / russian
+language: "auto"            # auto / english / russian / mix
+
+storage:
+  backend: "memory"       # 切换为 "memory" 即可回到内存版
+  block_size: 1024     # 文档分块大小，单位是文档块中的文档数量
 
 # 建索引时的文本处理
 index:

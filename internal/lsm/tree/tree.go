@@ -5,13 +5,11 @@ import (
 	"omolsm/internal/lsm/memtable"
 	"omolsm/internal/lsm/node"
 	"sort"
-	"sync"
 	"sync/atomic"
 )
 
 type Tree struct {
-	Conf     *config.Config
-	dataLock sync.RWMutex
+	Conf *config.Config
 
 	memTable memtable.MemTable
 	nodes    [][]*node.Node
@@ -20,13 +18,36 @@ type Tree struct {
 	stats      Stats
 }
 
+// Stats LSM 运行时统计信息.
 type Stats struct {
 	BytesWritten uint64 // 实际写入磁盘的字节数
 	BytesRead    uint64 // 实际从磁盘读取的字节数
+	FlushCount   int    // memtable → SST flush 次数
+	CompactCount int    // compaction 次数
 }
 
+// GetStats 返回运行时统计信息.
 func (t *Tree) GetStats() Stats {
 	return t.stats
+}
+
+// SSTPerLevel 返回每层的 SST 数量 (用于外部观测).
+func (t *Tree) SSTPerLevel() []int {
+	result := make([]int, len(t.nodes))
+	for i, level := range t.nodes {
+		result[i] = len(level)
+	}
+	return result
+}
+
+// MemTableSize 返回当前 memtable 的字节数.
+func (t *Tree) MemTableSize() int {
+	return t.memTable.Size()
+}
+
+// MemTableCount 返回当前 memtable 的 KV 数量.
+func (t *Tree) MemTableCount() int {
+	return t.memTable.KvsCnt()
 }
 
 func NewTree(conf *config.Config) (LSMTree, error) {
@@ -40,16 +61,17 @@ func NewTree(conf *config.Config) (LSMTree, error) {
 }
 
 func (t *Tree) Put(key string, value []byte) error {
-	t.dataLock.Lock()
-	defer t.dataLock.Unlock()
-
 	t.memTable.Put(key, value)
+
+	// Hook: OnWrite
+	if t.Conf.Hooks.OnWrite != nil {
+		t.Conf.Hooks.OnWrite([]byte(key), len(value))
+	}
 
 	if t.memTable.Size() < t.Conf.SSTSize {
 		return nil
 	}
 
-	// memtable 满了，同步 flush + 级联 compact
 	t.flushMemTable(t.memTable)
 	t.memTable = t.Conf.MemTableConstructor()
 
@@ -57,12 +79,9 @@ func (t *Tree) Put(key string, value []byte) error {
 }
 
 func (t *Tree) Get(key string) ([]byte, bool, error) {
-	t.dataLock.RLock()
-	defer t.dataLock.RUnlock()
-
 	if v, ok := t.memTable.Get(key); ok {
 		if v == nil {
-			return nil, false, nil // 墓碑，已删除
+			return nil, false, nil // 墓碑
 		}
 		return v, true, nil
 	}
@@ -86,14 +105,10 @@ func (t *Tree) Get(key string) ([]byte, bool, error) {
 }
 
 func (t *Tree) Delete(key string) error {
-	// 写入墓碑标记，nil 表示删除
 	return t.Put(key, nil)
 }
 
 func (t *Tree) Scan(startKey, endKey string) ([]*KVResult, error) {
-	t.dataLock.RLock()
-	defer t.dataLock.RUnlock()
-
 	merged := make(map[string][]byte)
 
 	for level := len(t.nodes) - 1; level >= 0; level-- {

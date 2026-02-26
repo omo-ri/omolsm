@@ -2,12 +2,13 @@ package engine
 
 import (
 	"fmt"
-	"omolsm/internal/invertedindex/dictionary"
-	"omolsm/internal/invertedindex/index"
-	"omolsm/internal/invertedindex/textproc"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"omolsm/internal/invertedindex/dictionary"
+	"omolsm/internal/invertedindex/index"
+	"omolsm/internal/invertedindex/textproc"
 
 	"github.com/RoaringBitmap/roaring"
 )
@@ -29,28 +30,82 @@ type Engine struct {
 	nextID        uint32
 }
 
-// NewEngine creates an engine with default config.
+// NewEngine creates an engine with default config (memory backend).
 func NewEngine() *Engine {
 	cfg := DefaultConfig()
-	return newEngineFromConfig(cfg)
+	e, _ := newEngineFromConfig(cfg)
+	return e
 }
 
-// NewEngineFromConfig creates an engine from a YAML config file.
-func NewEngineFromConfig(path string) (*Engine, error) {
+// NewEngineFromConfigPath creates an engine from a YAML config file.
+func NewEngineFromConfigPath(path string) (*Engine, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		return nil, err
 	}
-	return newEngineFromConfig(cfg), nil
+	return newEngineFromConfig(cfg)
 }
 
-func newEngineFromConfig(cfg *Config) *Engine {
+func NewEngineFromCfg(cfg *Config) (*Engine, error) {
+	return newEngineFromConfig(cfg)
+}
+
+func newEngineFromConfig(cfg *Config) (*Engine, error) {
+	dict, idx, err := buildStorage(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build storage: %w", err)
+	}
+
 	return &Engine{
 		conf:          cfg,
 		pipeline:      buildPipeline(cfg, cfg.Index),
 		queryPipeline: buildPipeline(cfg, cfg.Query),
-		dict:          dictionary.NewMemDictionary(),
-		idx:           index.NewMemIndex(),
+		dict:          dict,
+		idx:           idx,
+	}, nil
+}
+
+// buildStorage creates the dictionary and inverted index based on config.
+func buildStorage(cfg *Config) (dictionary.Dictionary, index.InvertedIndex, error) {
+	backend := cfg.Storage.Backend
+	if backend == "" {
+		backend = "memory"
+	}
+
+	switch backend {
+	case "memory":
+		return dictionary.NewMemDictionary(), index.NewMemIndex(), nil
+
+	case "lsm":
+		dataDir := cfg.Storage.DataDir
+		if dataDir == "" {
+			dataDir = ".lsm-data"
+		}
+
+		dictDir := filepath.Join(dataDir, "dictionary")
+		idxDir := filepath.Join(dataDir, "index")
+
+		confOpts := cfg.Storage.ToLSMConfigOptions()
+
+		dict, err := dictionary.NewLSMDictionaryFromConfig(dictDir, confOpts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("create lsm dictionary: %w", err)
+		}
+
+		idx, err := index.NewLSMIndexFromConfig(
+			idxDir,
+			[]index.LSMIndexOption{index.WithBlockSize(uint32(cfg.Storage.BlockSize))},
+			confOpts...,
+		)
+		if err != nil {
+			dict.Close()
+			return nil, nil, fmt.Errorf("create lsm index: %w", err)
+		}
+
+		return dict, idx, nil
+
+	default:
+		return nil, nil, fmt.Errorf("unknown storage backend: %q", backend)
 	}
 }
 
@@ -199,6 +254,59 @@ func (e *Engine) GetDoc(docID uint32) (DocInfo, bool) {
 		return DocInfo{}, false
 	}
 	return e.docs[docID], true
+}
+
+// Config returns the engine configuration.
+func (e *Engine) Config() *Config {
+	return e.conf
+}
+
+func (e *Engine) LSMStatsReport() string {
+	if e.conf.Storage.Backend != "lsm" {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	if lsmIdx, ok := e.idx.(*index.LSMIndex); ok {
+		s := lsmIdx.GetTreeStats()
+		sb.WriteString("  [Index LSM]\n")
+		sb.WriteString(fmt.Sprintf("    Flushes      : %d\n", s.FlushCount))
+		sb.WriteString(fmt.Sprintf("    Compactions  : %d\n", s.CompactCount))
+		sb.WriteString(fmt.Sprintf("    Bytes written: %d\n", s.BytesWritten))
+		sb.WriteString(fmt.Sprintf("    Bytes read   : %d\n", s.BytesRead))
+		for i, cnt := range lsmIdx.SSTPerLevel() {
+			if cnt > 0 {
+				sb.WriteString(fmt.Sprintf("    Level %d SSTs : %d\n", i, cnt))
+			}
+		}
+	}
+
+	if lsmDict, ok := e.dict.(*dictionary.LSMDictionary); ok {
+		s := lsmDict.GetTreeStats()
+		sb.WriteString("  [Dictionary LSM]\n")
+		sb.WriteString(fmt.Sprintf("    Flushes      : %d\n", s.FlushCount))
+		sb.WriteString(fmt.Sprintf("    Compactions  : %d\n", s.CompactCount))
+		sb.WriteString(fmt.Sprintf("    Bytes written: %d\n", s.BytesWritten))
+		sb.WriteString(fmt.Sprintf("    Bytes read   : %d\n", s.BytesRead))
+		for i, cnt := range lsmDict.SSTPerLevel() {
+			if cnt > 0 {
+				sb.WriteString(fmt.Sprintf("    Level %d SSTs : %d\n", i, cnt))
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// Close releases all resources (LSM temp directories, SST readers, etc).
+func (e *Engine) Close() {
+	if c, ok := e.dict.(interface{ Close() }); ok {
+		c.Close()
+	}
+	if c, ok := e.idx.(interface{ Close() }); ok {
+		c.Close()
+	}
 }
 
 func (e *Engine) matchExtension(filename string) bool {

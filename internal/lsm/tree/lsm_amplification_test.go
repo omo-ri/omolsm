@@ -1,11 +1,10 @@
-package test
+package tree
 
 import (
 	"fmt"
 	"math"
 	"math/rand"
 	"omolsm/config"
-	"omolsm/internal/lsm/tree"
 	"testing"
 )
 
@@ -27,7 +26,7 @@ func Test_WriteAmplification_Bounded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tr, err := tree.NewTree(conf)
+	tr, err := NewTree(conf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +86,7 @@ func Test_WriteAmplification_ScalesWithData(t *testing.T) {
 			config.WithSSTSize(1024),
 			config.WithSSTNumPerLevel(4),
 		)
-		tr, _ := tree.NewTree(conf)
+		tr, _ := NewTree(conf)
 
 		rng := rand.New(rand.NewSource(42))
 		var bytesIdeal uint64
@@ -118,7 +117,7 @@ func Test_ReadAmplification(t *testing.T) {
 		config.WithSSTSize(1024),
 		config.WithSSTNumPerLevel(4),
 	)
-	tr, _ := tree.NewTree(conf)
+	tr, _ := NewTree(conf)
 	defer tr.Close()
 
 	// 写入数据触发多次 flush

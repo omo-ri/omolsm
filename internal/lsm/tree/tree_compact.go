@@ -3,7 +3,8 @@ package tree
 import (
 	"fmt"
 	"log"
-	iterator2 "omolsm/internal/lsm/interator"
+	"omolsm/config"
+	iterator2 "omolsm/internal/lsm/iterator"
 	"omolsm/internal/lsm/memtable"
 	"omolsm/internal/lsm/node"
 	"omolsm/internal/lsm/sst_io/reader"
@@ -27,27 +28,35 @@ func (t *Tree) flushMemTable(memTable memtable.MemTable) {
 
 	size, blockToFilter, index := sstWriter.Finish()
 	t.stats.BytesWritten += size
+	t.stats.FlushCount++
 	t.insertNode(0, seq, size, blockToFilter, index)
 	sstWriter.Close()
 
-	// 级联 compact：从 level 0 开始，逐层检查
+	// Hook: OnFlush
+	if t.Conf.Hooks.OnFlush != nil {
+		t.Conf.Hooks.OnFlush(config.FlushInfo{
+			Level:   0,
+			SSTSize: size,
+			KVCount: len(kvs),
+			MemSize: memTable.Size(),
+		})
+	}
+
 	t.cascadeCompact()
 }
 
-// cascadeCompact 从 level 0 开始，如果某层节点数 >= 阈值就合并到下一层，
-// 然后继续检查下一层，直到不需要 compact 或到达最后一层.
 func (t *Tree) cascadeCompact() {
 	for level := 0; level < t.Conf.MaxLevel-1; level++ {
 		if len(t.nodes[level]) < t.Conf.SSTNumPerLevel {
 			break
 		}
-		//log.Printf("Level %d has %d nodes (>= %d), compact to level %d\n",
-		//	level, len(t.nodes[level]), t.conf.SSTNumPerLevel, level+1)
 		t.compactLevel(level)
 	}
 }
 
-// compactLevel 使用多路归并迭代器，避免将所有数据一次性加载到内存.
+// compactLevel 使用注入的 MergeIteratorFactory 进行归并.
+// - KV 模式 (默认): last-write-wins
+// - Bitmap 模式: OR 合并
 func (t *Tree) compactLevel(level int) {
 	if level >= t.Conf.MaxLevel-1 {
 		return
@@ -58,13 +67,25 @@ func (t *Tree) compactLevel(level int) {
 		return
 	}
 
-	iters := make([]iterator2.Iterator, 0, len(nodes))
+	// 构建子迭代器
+	subs := make([]config.SubIterator, 0, len(nodes))
 	for _, n := range nodes {
 		it := iterator2.NewNodeIterator(n, n.SSTReader(), n.IndexEntries())
-		iters = append(iters, it)
+		subs = append(subs, it) // NodeIterator 满足 config.SubIterator
 	}
 
-	mergeIter := iterator2.NewMergeIterator(iters)
+	// 用注入的工厂创建归并迭代器, nil 则使用默认 KV 模式
+	var mergeIter config.MergeIterator
+	if t.Conf.MergeIteratorFactory != nil {
+		mergeIter = t.Conf.MergeIteratorFactory(subs)
+	} else {
+		// 默认: KV 覆盖模式
+		iters := make([]iterator2.Iterator, len(subs))
+		for i, s := range subs {
+			iters[i] = s.(iterator2.Iterator)
+		}
+		mergeIter = iterator2.NewMergeIterator(iters)
+	}
 
 	nextLevel := level + 1
 	seq := t.levelToSeq[nextLevel].Add(1)
@@ -86,10 +107,20 @@ func (t *Tree) compactLevel(level int) {
 
 	size, blockToFilter, index := sstWriter.Finish()
 	t.stats.BytesWritten += size
+	t.stats.CompactCount++
 	sstWriter.Close()
 	t.insertNode(nextLevel, seq, size, blockToFilter, index)
 
-	// 4. 删除旧节点
+	// Hook: OnCompaction
+	if t.Conf.Hooks.OnCompaction != nil {
+		t.Conf.Hooks.OnCompaction(config.CompactionInfo{
+			FromLevel:  level,
+			ToLevel:    nextLevel,
+			InputFiles: len(nodes),
+			OutputSize: size,
+		})
+	}
+
 	t.removeNodes(level, nodes)
 }
 

@@ -33,29 +33,12 @@ func (d *MemDictionary) Get(term string) (uint32, bool) {
 	return id, ok
 }
 
-func (d *MemDictionary) GetTerm(id uint32) (string, bool) {
-	if int(id) >= len(d.idToTerm) {
-		return "", false
-	}
-	return d.idToTerm[id], true
-}
-
 func (d *MemDictionary) GetOrAddTerms(terms []string) []uint32 {
 	ids := make([]uint32, len(terms))
 	for i, term := range terms {
 		ids[i] = d.GetOrAdd(term)
 	}
 	return ids
-}
-
-func (d *MemDictionary) GetTerms(ids []uint32) []string {
-	terms := make([]string, len(ids))
-	for i, id := range ids {
-		if int(id) < len(d.idToTerm) {
-			terms[i] = d.idToTerm[id]
-		}
-	}
-	return terms
 }
 
 func (d *MemDictionary) Size() int {

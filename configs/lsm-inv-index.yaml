@@ -1,0 +1,47 @@
+# ============================================
+# 倒排索引引擎配置
+# ============================================
+
+# 数据源
+source:
+  dir: "./documents"
+  encoding: "utf-8"
+  extensions:
+    - ".txt"
+
+# 语言: auto / english / russian / mixed
+language: "auto"
+
+# 存储后端
+storage:
+  backend: "lsm"          # "memory" 或 "lsm"
+  data_dir: ".lsm-data"   # 本地可见，Close() 时自动清理
+  block_size: 1024         # docID 分片大小
+  sst_size: 8192        # memtable flush 阈值 (4MB)
+  sst_num_per_level: 10    # 每层 SST 数量上限，触发 compaction
+  sst_block_size: 4096     # SST 内 data block 大小 (4KB)
+  max_level: 4             # LSM 最大层数
+
+# 索引管道
+index:
+  stop_words: true
+  stemming: true
+  strip_accents: false
+  normalize: true
+  min_term_length: 1
+
+# 查询管道
+query:
+  stop_words: false
+  stemming: true
+  strip_accents: false
+  normalize: true
+  min_term_length: 1
+
+# 自定义停用词 (可选)
+custom_stop_words:
+  english:
+    - "foo"
+    - "bar"
+  russian:
+    - "тест"

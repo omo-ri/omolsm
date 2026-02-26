@@ -1,1 +1,4 @@
 .idea/
+.lsm-data/
+documents/
+*.sst

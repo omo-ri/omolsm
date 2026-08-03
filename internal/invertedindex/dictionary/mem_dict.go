@@ -1,5 +1,7 @@
 package dictionary
 
+import "strings"
+
 // MemDictionary is an in-memory implementation of Dictionary.
 // Forward lookup: map[string]uint32 (term → id).
 // Reverse lookup: []string (id → term, index is feature_id).
@@ -39,6 +41,16 @@ func (d *MemDictionary) GetOrAddTerms(terms []string) []uint32 {
 		ids[i] = d.GetOrAdd(term)
 	}
 	return ids
+}
+
+func (d *MemDictionary) ScanPrefix(prefix string) ([]uint32, error) {
+	var ids []uint32
+	for term, id := range d.termToID {
+		if strings.HasPrefix(term, prefix) {
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (d *MemDictionary) Size() int {

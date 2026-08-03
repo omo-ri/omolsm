@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"strings"
 
 	"omolsm/config"
 	"omolsm/internal/lsm/tree"
@@ -106,6 +107,30 @@ func (d *LSMDictionary) Close() {
 	if d.dir != "" {
 		_ = os.RemoveAll(d.dir)
 	}
+}
+
+// ScanPrefix returns featureIDs for all terms starting with the given prefix.
+func (d *LSMDictionary) ScanPrefix(prefix string) ([]uint32, error) {
+	if prefix == "" {
+		return nil, nil
+	}
+	// endKey: append 0xFF so all keys with this prefix fall in [prefix, endKey).
+	endKey := prefix + "\xff"
+	kvs, err := d.tree.Scan(prefix, endKey)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint32, 0, len(kvs))
+	for _, kv := range kvs {
+		if !strings.HasPrefix(kv.Key, prefix) {
+			continue
+		}
+		if len(kv.Value) < 4 {
+			continue
+		}
+		ids = append(ids, binary.BigEndian.Uint32(kv.Value))
+	}
+	return ids, nil
 }
 
 // --- internal helpers ---

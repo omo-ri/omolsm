@@ -2,21 +2,36 @@ package engine
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"omolsm/internal/invertedindex/dateindex"
 	"omolsm/internal/invertedindex/dictionary"
 	"omolsm/internal/invertedindex/index"
+	"omolsm/internal/invertedindex/kgram"
 	"omolsm/internal/invertedindex/textproc"
 
 	"github.com/RoaringBitmap/roaring"
+	"gopkg.in/yaml.v3"
 )
+
+// DateMeta carries optional date metadata for a document.
+type DateMeta struct {
+	Date      *time.Time // Requirement A: single date attribute
+	StartDate *time.Time // Requirement B: validity start
+	EndDate   *time.Time // Requirement B: validity end (nil = forever valid)
+}
 
 // DocInfo stores metadata for an indexed document.
 type DocInfo struct {
-	ID       uint32
-	Filename string
+	ID        uint32
+	Filename  string
+	Date      *time.Time // Requirement A
+	StartDate *time.Time // Requirement B
+	EndDate   *time.Time // Requirement B (nil = forever valid)
 }
 
 // Engine orchestrates text processing, dictionary, and inverted index.
@@ -26,8 +41,15 @@ type Engine struct {
 	queryPipeline *textproc.Pipeline
 	dict          dictionary.Dictionary
 	idx           index.InvertedIndex
+	kgramIdx      kgram.Index
 	docs          []DocInfo
 	nextID        uint32
+
+	// Date indexes
+	dateIdx      *dateindex.DateIndex // Requirement A: single date
+	startDateIdx *dateindex.DateIndex // Requirement B: start date
+	endDateIdx   *dateindex.DateIndex // Requirement B: end date
+	openEndDocs  *roaring.Bitmap      // docIDs with nil EndDate (forever valid)
 }
 
 // NewEngine creates an engine with default config (memory backend).
@@ -56,13 +78,39 @@ func newEngineFromConfig(cfg *Config) (*Engine, error) {
 		return nil, fmt.Errorf("build storage: %w", err)
 	}
 
+	kgramIdx, err := buildKgramIndex(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build kgram index: %w", err)
+	}
+
 	return &Engine{
 		conf:          cfg,
 		pipeline:      buildPipeline(cfg, cfg.Index),
 		queryPipeline: buildPipeline(cfg, cfg.Query),
 		dict:          dict,
 		idx:           idx,
+		kgramIdx:      kgramIdx,
+		dateIdx:       dateindex.New(),
+		startDateIdx:  dateindex.New(),
+		endDateIdx:    dateindex.New(),
+		openEndDocs:   roaring.New(),
 	}, nil
+}
+
+// buildKgramIndex creates a k-gram index matching the configured backend.
+func buildKgramIndex(cfg *Config) (kgram.Index, error) {
+	const k = 2
+	backend := cfg.Storage.Backend
+	if backend == "" || backend == "memory" {
+		return kgram.NewMemKgramIndex(k), nil
+	}
+	// lsm backend
+	dataDir := cfg.Storage.DataDir
+	if dataDir == "" {
+		dataDir = ".lsm-data"
+	}
+	kgramDir := filepath.Join(dataDir, "kgram")
+	return kgram.NewLSMKgramIndex(kgramDir, k, cfg.Storage.ToLSMConfigOptions()...)
 }
 
 // buildStorage creates the dictionary and inverted index based on config.
@@ -160,7 +208,10 @@ func buildPipeline(cfg *Config, pc PipelineConfig) *textproc.Pipeline {
 }
 
 // IndexDir scans the configured source directory for matching files and indexes each one.
+// If a metadata.yaml file exists in the directory, it will be used to provide date metadata.
 func (e *Engine) IndexDir(dir string) error {
+	metaMap := loadMetadataFile(dir)
+
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return fmt.Errorf("read dir %s: %w", dir, err)
@@ -175,7 +226,8 @@ func (e *Engine) IndexDir(dir string) error {
 		}
 
 		filePath := filepath.Join(dir, entry.Name())
-		if err := e.IndexFile(filePath); err != nil {
+		meta := metaMap[entry.Name()]
+		if err := e.IndexFileWithDates(filePath, meta); err != nil {
 			return fmt.Errorf("index file %s: %w", entry.Name(), err)
 		}
 	}
@@ -188,8 +240,59 @@ func (e *Engine) IndexSource() error {
 	return e.IndexDir(e.conf.Source.Dir)
 }
 
-// IndexFile reads a single file and adds it to the index.
+// metadataEntry is the YAML structure for per-file date metadata.
+type metadataEntry struct {
+	Date      string `yaml:"date"`       // "YYYY-MM-DD"
+	StartDate string `yaml:"start_date"` // "YYYY-MM-DD"
+	EndDate   string `yaml:"end_date"`   // "YYYY-MM-DD" or empty = forever valid
+}
+
+// loadMetadataFile loads metadata.yaml from dir, returning a map of filename → DateMeta.
+// Returns an empty map if the file doesn't exist.
+func loadMetadataFile(dir string) map[string]DateMeta {
+	result := make(map[string]DateMeta)
+
+	data, err := os.ReadFile(filepath.Join(dir, "metadata.yaml"))
+	if err != nil {
+		return result
+	}
+
+	var raw map[string]metadataEntry
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		log.Printf("Warning: failed to parse metadata.yaml: %v", err)
+		return result
+	}
+
+	for filename, entry := range raw {
+		var meta DateMeta
+		if entry.Date != "" {
+			if t, err := time.Parse("2006-01-02", entry.Date); err == nil {
+				meta.Date = &t
+			}
+		}
+		if entry.StartDate != "" {
+			if t, err := time.Parse("2006-01-02", entry.StartDate); err == nil {
+				meta.StartDate = &t
+			}
+		}
+		if entry.EndDate != "" {
+			if t, err := time.Parse("2006-01-02", entry.EndDate); err == nil {
+				meta.EndDate = &t
+			}
+		}
+		result[filename] = meta
+	}
+
+	return result
+}
+
+// IndexFile reads a single file and adds it to the index (no date metadata).
 func (e *Engine) IndexFile(filePath string) error {
+	return e.IndexFileWithDates(filePath, DateMeta{})
+}
+
+// IndexFileWithDates reads a single file and adds it to the index with date metadata.
+func (e *Engine) IndexFileWithDates(filePath string, meta DateMeta) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
@@ -199,14 +302,37 @@ func (e *Engine) IndexFile(filePath string) error {
 	docID := e.nextID
 	e.nextID++
 
-	e.docs = append(e.docs, DocInfo{
-		ID:       docID,
-		Filename: filepath.Base(filePath),
-	})
+	doc := DocInfo{
+		ID:        docID,
+		Filename:  filepath.Base(filePath),
+		Date:      meta.Date,
+		StartDate: meta.StartDate,
+		EndDate:   meta.EndDate,
+	}
+	e.docs = append(e.docs, doc)
 
+	// Text index
 	result := e.pipeline.Process(text)
 	featureIDs := e.dict.GetOrAddTerms(result.Terms)
 	e.idx.Add(docID, featureIDs)
+
+	for i, term := range result.Terms {
+		e.kgramIdx.AddTerm(featureIDs[i], term)
+	}
+
+	// Date indexes
+	if meta.Date != nil {
+		e.dateIdx.Add(dateindex.DayFromTime(*meta.Date), docID)
+	}
+	if meta.StartDate != nil {
+		e.startDateIdx.Add(dateindex.DayFromTime(*meta.StartDate), docID)
+	}
+	if meta.EndDate != nil {
+		e.endDateIdx.Add(dateindex.DayFromTime(*meta.EndDate), docID)
+	} else if meta.StartDate != nil {
+		// Only track open-end if the document participates in the dual-date model
+		e.openEndDocs.Add(docID)
+	}
 
 	return nil
 }
@@ -227,6 +353,83 @@ func (e *Engine) Search(terms ...string) *Result {
 	}
 
 	return newResult(e.idx.And(featureIDs), e)
+}
+
+// SearchPrefix returns documents containing any term that starts with the given prefix.
+// The prefix is lowercased before lookup; stemming is NOT applied.
+// Example: SearchPrefix("fox") matches "fox", "foxes", "foxhound", …
+func (e *Engine) SearchPrefix(prefix string) *Result {
+	prefix = strings.ToLower(prefix)
+	ids, err := e.dict.ScanPrefix(prefix)
+	if err != nil || len(ids) == 0 {
+		return newResult(roaring.New(), e)
+	}
+	bm := roaring.New()
+	for _, id := range ids {
+		bm.Or(e.idx.GetPostingList(id))
+	}
+	return newResult(bm, e)
+}
+
+// SearchWildcard returns documents containing any term matching the wildcard pattern.
+// '*' matches zero or more characters. Uses the k-gram index for candidate lookup,
+// then post-filters with exact pattern matching.
+// Example: SearchWildcard("he*o") matches "hello", "hero", "hetero", …
+func (e *Engine) SearchWildcard(pattern string) *Result {
+	pattern = strings.ToLower(pattern)
+	featureIDs := e.kgramIdx.Search(pattern)
+	if len(featureIDs) == 0 {
+		return newResult(roaring.New(), e)
+	}
+	bm := roaring.New()
+	for _, id := range featureIDs {
+		bm.Or(e.idx.GetPostingList(id))
+	}
+	return newResult(bm, e)
+}
+
+// SearchDateRange returns docs whose Date is in [from, to]. (Requirement A)
+func (e *Engine) SearchDateRange(from, to string) (*Result, error) {
+	fromDay, err := dateindex.DayFromString(from)
+	if err != nil {
+		return nil, fmt.Errorf("bad 'from' date %q: %w", from, err)
+	}
+	toDay, err := dateindex.DayFromString(to)
+	if err != nil {
+		return nil, fmt.Errorf("bad 'to' date %q: %w", to, err)
+	}
+	return newResult(e.dateIdx.Range(fromDay, toDay), e), nil
+}
+
+// SearchValidInRange returns docs valid at any point in [from, to]. (Requirement B)
+// A document is valid if: startDate <= qTo AND (endDate >= qFrom OR endDate is nil).
+func (e *Engine) SearchValidInRange(from, to string) (*Result, error) {
+	fromDay, err := dateindex.DayFromString(from)
+	if err != nil {
+		return nil, fmt.Errorf("bad 'from' date %q: %w", from, err)
+	}
+	toDay, err := dateindex.DayFromString(to)
+	if err != nil {
+		return nil, fmt.Errorf("bad 'to' date %q: %w", to, err)
+	}
+	startOK := e.startDateIdx.LeBitmap(toDay) // startDate <= qTo
+	endOK := e.endDateIdx.GeBitmap(fromDay)   // endDate >= qFrom
+	endOK.Or(e.openEndDocs)                   // ...or endDate is nil
+	startOK.And(endOK)
+	return newResult(startOK, e), nil
+}
+
+// SearchAppearedInRange returns docs whose StartDate is in [from, to]. (Requirement B)
+func (e *Engine) SearchAppearedInRange(from, to string) (*Result, error) {
+	fromDay, err := dateindex.DayFromString(from)
+	if err != nil {
+		return nil, fmt.Errorf("bad 'from' date %q: %w", from, err)
+	}
+	toDay, err := dateindex.DayFromString(to)
+	if err != nil {
+		return nil, fmt.Errorf("bad 'to' date %q: %w", to, err)
+	}
+	return newResult(e.startDateIdx.Range(fromDay, toDay), e), nil
 }
 
 // Stats returns basic statistics about the index.
@@ -305,6 +508,9 @@ func (e *Engine) Close() {
 		c.Close()
 	}
 	if c, ok := e.idx.(interface{ Close() }); ok {
+		c.Close()
+	}
+	if c, ok := e.kgramIdx.(interface{ Close() }); ok {
 		c.Close()
 	}
 }

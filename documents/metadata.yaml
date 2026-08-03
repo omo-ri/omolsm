@@ -1,0 +1,49 @@
+# 文档日期元数据
+# date:       单日期属性 (需求 A)
+# start_date: 生效日期 (需求 B)
+# end_date:   失效日期 (需求 B), 不填 = 永久有效
+
+ai.txt:
+  date: "2024-03-15"
+  start_date: "2024-03-01"
+  end_date: "2025-03-01"
+
+ai_ru.txt:
+  date: "2024-05-20"
+  start_date: "2024-05-01"
+  end_date: ""              # 永久有效
+
+big.txt:
+  date: "2023-01-01"
+  start_date: "2023-01-01"
+  end_date: ""              # 永久有效
+
+climate.txt:
+  date: "2024-06-10"
+  start_date: "2024-06-01"
+  end_date: "2024-12-31"
+
+cosmos.txt:
+  date: "2024-09-01"
+  start_date: "2024-09-01"
+  end_date: "2025-09-01"
+
+mars.txt:
+  date: "2024-01-20"
+  start_date: "2024-01-01"
+  end_date: "2024-06-30"
+
+mix.txt:
+  date: "2024-07-04"
+  start_date: "2024-07-01"
+  end_date: "2024-12-31"
+
+ocean.txt:
+  date: "2024-08-15"
+  start_date: "2024-08-01"
+  end_date: ""              # 永久有效
+
+space.txt:
+  date: "2025-01-10"
+  start_date: "2025-01-01"
+  end_date: ""              # 永久有效

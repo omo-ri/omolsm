@@ -111,7 +111,7 @@ func (p *queryParser) parseAnd() (*engine.Result, error) {
 	return left, nil
 }
 
-// primary → "(" orExpr ")" | TERM
+// primary → "(" orExpr ")" | dateExpr | wildcard | TERM
 func (p *queryParser) parsePrimary() (*engine.Result, error) {
 	if p.peek() == "(" {
 		p.advance()
@@ -137,7 +137,51 @@ func (p *queryParser) parsePrimary() (*engine.Result, error) {
 	}
 
 	p.advance()
+
+	// Date range expressions: DATE:[from,to], VALID:[from,to], APPEARED:[from,to]
+	if strings.HasPrefix(upper, "DATE:") || strings.HasPrefix(upper, "VALID:") || strings.HasPrefix(upper, "APPEARED:") {
+		return p.parseDateExpr(tok)
+	}
+
+	if strings.Contains(tok, "*") {
+		// Pure prefix: "fox*" (wildcard only at the end, nothing before it is *)
+		if strings.HasSuffix(tok, "*") && !strings.ContainsRune(tok[:len(tok)-1], '*') {
+			return p.engine.SearchPrefix(tok[:len(tok)-1]), nil
+		}
+		// General wildcard: "he*o", "*ello", "h*ll*"
+		return p.engine.SearchWildcard(tok), nil
+	}
+
 	return p.engine.Search(tok), nil
+}
+
+// parseDateExpr parses "DATE:[2024-01-01,2024-12-31]" and similar expressions.
+func (p *queryParser) parseDateExpr(tok string) (*engine.Result, error) {
+	colonIdx := strings.IndexByte(tok, ':')
+	prefix := strings.ToUpper(tok[:colonIdx])
+	rangePart := tok[colonIdx+1:]
+
+	if len(rangePart) < 2 || rangePart[0] != '[' || rangePart[len(rangePart)-1] != ']' {
+		return nil, fmt.Errorf("date expression must use [from,to] syntax, got %q", rangePart)
+	}
+	inner := rangePart[1 : len(rangePart)-1]
+	parts := strings.SplitN(inner, ",", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("date expression requires two dates: [from,to], got %q", inner)
+	}
+
+	from, to := parts[0], parts[1]
+
+	switch prefix {
+	case "DATE":
+		return p.engine.SearchDateRange(from, to)
+	case "VALID":
+		return p.engine.SearchValidInRange(from, to)
+	case "APPEARED":
+		return p.engine.SearchAppearedInRange(from, to)
+	default:
+		return nil, fmt.Errorf("unknown date prefix: %q", prefix)
+	}
 }
 
 // ---------------------------------------------------------------------------

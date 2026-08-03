@@ -11,6 +11,9 @@ type Dictionary interface {
 	// GetOrAddTerms maps a batch of terms to feature_ids, creating new mappings as needed.
 	GetOrAddTerms(terms []string) []uint32
 
+	// ScanPrefix returns featureIDs for all terms that start with the given prefix.
+	ScanPrefix(prefix string) ([]uint32, error)
+
 	// Size returns the number of terms in the dictionary.
 	Size() int
 }

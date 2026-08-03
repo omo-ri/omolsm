@@ -1,132 +1,153 @@
 # textproc
 
-文本预处理管道，为倒排索引提供 term 提取能力。支持英文和俄文。
+Конвейер предобработки текста: извлекает термы для инвертированного индекса.
+Поддерживает английский и русский языки.
 
-## 处理流程
+## Схема обработки
 
 ```
-原始文本
+Исходный текст
   │
-  ▼  Tokenizer          按 Unicode 字母/数字边界分词
+  ▼  Tokenizer          Разбиение по границам Unicode-букв и цифр
   │                      "Hello, мир!" → ["Hello", "мир"]
   │
-  ▼  Normalizer          小写 + Unicode NFC 归一化 + 可选去重音
+  ▼  Normalizer          Нижний регистр + Unicode NFC + опционально снятие диакритики
   │                      ["Hello", "МИР"] → ["hello", "мир"]
   │
-  ▼  StopWordFilter      移除停用词 (the, is, и, в, ...)
+  ▼  StopWordFilter      Удаление стоп-слов (the, is, и, в, …)
   │                      ["the", "quick", "fox"] → ["quick", "fox"]
   │
-  ▼  Stemmer             Snowball 词干提取
+  ▼  Stemmer             Стемминг Snowball
   │                      ["running", "dogs"] → ["run", "dog"]
   │
-  ▼  去重
+  ▼  Дедупликация
   │
-  结果: Lang + Terms + Tokens
+  Результат: Lang + Terms + Tokens
 ```
 
-语言通过 Unicode 字符分布自动检测：西里尔字母占多数判定为俄文，否则为英文。
+Язык определяется автоматически по распределению символов в тексте.
 
-## 快速开始
+## Быстрый старт
 
 ```go
-import "omolsm/internal/textproc"
+import "omolsm/internal/invertedindex/textproc"
 
-// 默认配置，自动检测语言
+// Конфигурация по умолчанию, язык определяется автоматически
 p := textproc.NewPipeline()
 result := p.Process("The quick brown foxes are jumping over the lazy dogs")
 
 result.Lang   // "english"
 result.Terms  // ["quick", "brown", "fox", "jump", "lazi", "dog"]
-result.Tokens // 完整 token 流（带 position，未去重）
+result.Tokens // полный поток токенов (с позициями, без дедупликации)
 ```
 
 ```go
-// 俄文
+// Русский текст
 result := p.Process("Быстрая коричневая лиса прыгает через ленивую собаку")
 
 result.Lang   // "russian"
 result.Terms  // ["быстр", "коричнев", "лис", "прыга", "ленив", "собак"]
 ```
 
-## 配置
+## Конфигурация
 
-所有阶段都可通过 functional options 替换或禁用：
+Любой этап можно заменить или отключить через functional options:
 
 ```go
-// 强制指定语言
+// Жёстко задать язык
 p := textproc.NewPipeline(textproc.WithLanguage(textproc.LangRussian))
 
-// 禁用停用词过滤（查询侧场景）
+// Отключить фильтрацию стоп-слов (сценарий обработки запроса)
 p := textproc.NewPipeline(textproc.WithStopWordFilter(nil))
 
-// 禁用词干提取
+// Отключить стемминг
 p := textproc.NewPipeline(textproc.WithStemmer(nil))
 
-// 启用去重音（café → cafe）
+// Включить снятие диакритики (café → cafe)
 p := textproc.NewPipeline(
-    textproc.WithNormalizer(textproc.NewUnicodeNormalizer(textproc.WithStripAccents())),
+    textproc.WithNormalizer(textproc.NewUnicodeNormalizer(textproc.WithStripAccents(true))),
 )
 
-// 自定义分词器
+// Свой токенизатор
 p := textproc.NewPipeline(textproc.WithTokenizer(myTokenizer))
 ```
 
-## 模块结构
+## Структура пакета
 
 ```
 textproc/
-├── pipeline.go       Pipeline 编排器 + functional options
-├── tokenizer.go      Tokenizer 接口 + UnicodeTokenizer
-├── normalizer.go     Normalizer 接口 + UnicodeNormalizer (NFC + 小写 + 去重音)
-├── stopwords.go      StopWordFilter 接口 + 内置英文/俄文停用词表
-├── stemmer.go        Stemmer 接口 + SnowballStemmer 适配器
-├── lang.go           Lang 常量 + 语言检测
-└── pipeline_test.go  测试
+├── pipeline.go       Оркестратор Pipeline + functional options
+├── tokenizer.go      Интерфейс Tokenizer + UnicodeTokenizer
+├── normalizer.go     Интерфейс Normalizer + UnicodeNormalizer (NFC + регистр + диакритика)
+├── stopwords.go      Интерфейс StopWordFilter + встроенные списки стоп-слов
+├── stemmer.go        Интерфейс Stemmer + адаптер SnowballStemmer
+├── lang.go           Константы Lang + определение языка
+└── pipeline_test.go  Тесты
 ```
 
-## 各组件说明
+## Компоненты
 
 ### Tokenizer
 
-基于 `strings.FieldsFunc`，以非字母非数字字符作为分隔符切割文本。`unicode.IsLetter` 天然支持拉丁和西里尔字母，无需特殊处理。
+Работает на базе `strings.FieldsFunc`: разделителями считаются все небуквенные и
+нецифровые символы. `unicode.IsLetter` поддерживает латиницу и кириллицу без
+дополнительной обработки.
 
 ### Normalizer
 
-三步处理：Unicode NFC 归一化 → 转小写 → 可选去重音。去重音的原理是将字符串分解为 NFD 形式，移除所有组合标记（`unicode.Mn`），再重组为 NFC。
+Три шага: Unicode-нормализация NFC → приведение к нижнему регистру → опциональное
+снятие диакритики. Диакритика снимается разложением строки в форму NFD, удалением
+всех комбинирующих знаков (`unicode.Mn`) и обратной сборкой в NFC.
 
 ### StopWordFilter
 
-数据结构为 `map[Lang]map[string]struct{}`，两层 map：第一层按语言分区，第二层是该语言的停用词 set。查询是 O(1) 的 map 查找。内置英文约 120 个、俄文约 150 个常用停用词，可通过 `AddCustomWords` 扩展。
+Структура данных — `map[Lang]map[string]struct{}`: первый уровень разделяет языки,
+второй хранит множество стоп-слов языка. Проверка — поиск по map за O(1). Встроено
+около 120 английских и около 150 русских стоп-слов, список расширяется через
+`AddCustomWords`.
 
 ### Stemmer
 
-封装 `github.com/kljensen/snowball`，支持英文和俄文。对 `LangUnknown` 直接返回原词。
+Обёртка над `github.com/kljensen/snowball`, поддерживает английский и русский.
+Для `LangUnknown` возвращает слово без изменений.
 
-### 语言检测
+### Определение языка
 
-统计文本中西里尔字母和拉丁字母的数量，西里尔超过 50% 判定为俄文，否则为英文。
+`DetectLang` считает количество кириллических и латинских букв в тексте:
 
-## 索引侧 vs 查询侧
+- обе доли выше 20 % → `LangMixed`;
+- доля кириллицы выше 50 % → `LangRussian`;
+- иначе → `LangEnglish`;
+- букв нет вовсе → `LangUnknown`.
 
-建索引和查询时可以使用不同的 pipeline 配置：
+Для смешанных документов язык каждого токена определяется отдельно через
+`DetectTokenLang` — по наличию кириллических символов в самом токене.
+
+## Индексация против запроса
+
+Для индексации и для разбора запроса используются разные конфигурации конвейера:
 
 ```go
-// 建索引：完整 pipeline
+// Индексация: полный конвейер
 indexPipeline := textproc.NewPipeline()
 
-// 查询：不去停用词（允许用户搜索任意词）
+// Запрос: без удаления стоп-слов (пользователь может искать любое слово)
 queryPipeline := textproc.NewPipeline(textproc.WithStopWordFilter(nil))
 ```
 
-## 依赖
+Важно: `stemming`, `normalize` и `strip_accents` должны совпадать в обеих
+конфигурациях — иначе термы запроса не совпадут с термами индекса. Конфигурация
+движка проверяет это при загрузке.
+
+## Зависимости
 
 ```bash
 go get github.com/kljensen/snowball
 go get golang.org/x/text
 ```
 
-## 测试
+## Тесты
 
 ```bash
-go test ./internal/textproc/ -v
+go test ./internal/invertedindex/textproc/ -v
 ```

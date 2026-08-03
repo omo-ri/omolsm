@@ -17,7 +17,7 @@ storage:
   backend: "lsm"          # "memory" 或 "lsm"
   data_dir: ".lsm-data"   # 本地可见，Close() 时自动清理
   block_size: 1024         # docID 分片大小
-  sst_size: 8192        # memtable flush 阈值 (4MB)
+  sst_size: 4194304        # memtable flush 阈值 (4MB) 4194304
   sst_num_per_level: 10    # 每层 SST 数量上限，触发 compaction
   sst_block_size: 4096     # SST 内 data block 大小 (4KB)
   max_level: 4             # LSM 最大层数

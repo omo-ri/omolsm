@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(file README.md TEST_CASES.md docs/*.md internal/invertedindex/textproc/README.md internal/lsm/filter/bloom_filter_test.md internal/lsm/block/block_test.md configs/*.yaml)"
+    ]
+  }
+}
